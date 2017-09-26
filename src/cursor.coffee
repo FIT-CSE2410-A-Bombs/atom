@@ -37,7 +37,7 @@ class Cursor extends Model
   #     * `newBufferPosition` {Point}
   #     * `newScreenPosition` {Point}
   #     * `textChanged` {Boolean}
-  #     * `Cursor` {Cursor} that triggered the event
+  #     * `cursor` {Cursor} that triggered the event
   #
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidChangePosition: (callback) ->
@@ -543,7 +543,7 @@ class Cursor extends Model
   #
   # Returns a {Range}.
   getCurrentParagraphBufferRange: ->
-    @editor.languageMode.rowRangeForParagraphAtBufferRow(@getBufferRow())
+    @editor.rowRangeForParagraphAtBufferRow(@getBufferRow())
 
   # Public: Returns the characters preceding the cursor in the current word.
   getCurrentWordPrefix: ->
