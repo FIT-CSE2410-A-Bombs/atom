@@ -362,7 +362,7 @@ class TextEditorComponent {
       this.requestHorizontalMeasurement(screenRange.start.row, screenRange.start.column)
       this.requestHorizontalMeasurement(screenRange.end.row, screenRange.end.column)
     }
-    this.populateVisibleRowRange()
+    this.populateVisibleRowRange(this.getRenderedStartRow())
     this.populateVisibleTiles()
     this.queryScreenLinesToRender()
     this.queryLongestLine()
@@ -1595,30 +1595,30 @@ class TextEditorComponent {
   }
 
   didTextInput (event) {
-    if (!this.isInputEnabled()) return
-
-    event.stopPropagation()
-
-    // WARNING: If we call preventDefault on the input of a space character,
-    // then the browser interprets the spacebar keypress as a page-down command,
-    // causing spaces to scroll elements containing editors. This is impossible
-    // to test.
-    if (event.data !== ' ') event.preventDefault()
-
     if (this.compositionCheckpoint) {
       this.props.model.revertToCheckpoint(this.compositionCheckpoint)
       this.compositionCheckpoint = null
     }
 
-    // If the input event is fired while the accented character menu is open it
-    // means that the user has chosen one of the accented alternatives. Thus, we
-    // will replace the original non accented character with the selected
-    // alternative.
-    if (this.accentedCharacterMenuIsOpen) {
-      this.props.model.selectLeft()
-    }
+    if (this.isInputEnabled()) {
+      event.stopPropagation()
 
-    this.props.model.insertText(event.data, {groupUndo: true})
+      // WARNING: If we call preventDefault on the input of a space character,
+      // then the browser interprets the spacebar keypress as a page-down command,
+      // causing spaces to scroll elements containing editors. This is impossible
+      // to test.
+      if (event.data !== ' ') event.preventDefault()
+
+      // If the input event is fired while the accented character menu is open it
+      // means that the user has chosen one of the accented alternatives. Thus, we
+      // will replace the original non accented character with the selected
+      // alternative.
+      if (this.accentedCharacterMenuIsOpen) {
+        this.props.model.selectLeft()
+      }
+
+      this.props.model.insertText(event.data, {groupUndo: true})
+    }
   }
 
   // We need to get clever to detect when the accented character menu is
@@ -2096,14 +2096,30 @@ class TextEditorComponent {
     return marginInBaseCharacters * this.getBaseCharacterWidth()
   }
 
+  // This method is called at the beginning of a frame render to relay any
+  // potential changes in the editor's width into the model before proceeding.
   updateModelSoftWrapColumn () {
     const {model} = this.props
     const newEditorWidthInChars = this.getScrollContainerClientWidthInBaseCharacters()
     if (newEditorWidthInChars !== model.getEditorWidthInChars()) {
       this.suppressUpdates = true
+
+      const renderedStartRow = this.getRenderedStartRow()
       this.props.model.setEditorWidthInChars(newEditorWidthInChars)
-      // Wrapping may cause a vertical scrollbar to appear, which will change the width again.
+
+      // Relaying a change in to the editor's client width may cause the
+      // vertical scrollbar to appear or disappear, which causes the editor's
+      // client width to change *again*. Make sure the display layer is fully
+      // populated for the visible area before recalculating the editor's
+      // width in characters. Then update the display layer *again* just in
+      // case a change in scrollbar visibility causes lines to wrap
+      // differently. We capture the renderedStartRow before resetting the
+      // display layer because once it has been reset, we can't compute the
+      // rendered start row accurately. 😥
+      this.populateVisibleRowRange(renderedStartRow)
       this.props.model.setEditorWidthInChars(this.getScrollContainerClientWidthInBaseCharacters())
+      this.derivedDimensionsCache = {}
+
       this.suppressUpdates = false
     }
   }
@@ -2867,13 +2883,19 @@ class TextEditorComponent {
     }
   }
 
-  // Ensure the spatial index is populated with rows that are currently
-  // visible so we *at least* get the longest row in the visible range.
-  populateVisibleRowRange () {
-    const editorHeightInTiles = this.getScrollContainerHeight() / this.getLineHeight()
-    const visibleTileCount = Math.ceil(editorHeightInTiles) + 1
-    const lastRenderedRow = this.getRenderedStartRow() + (visibleTileCount * this.getRowsPerTile())
-    this.props.model.displayLayer.populateSpatialIndexIfNeeded(Infinity, lastRenderedRow)
+  // Ensure the spatial index is populated with rows that are currently visible
+  populateVisibleRowRange (renderedStartRow) {
+    const {model} = this.props
+    const previousScreenLineCount = model.getApproximateScreenLineCount()
+
+    const renderedEndRow = renderedStartRow + (this.getVisibleTileCount() * this.getRowsPerTile())
+    this.props.model.displayLayer.populateSpatialIndexIfNeeded(Infinity, renderedEndRow)
+
+    // If the approximate screen line count changes, previously-cached derived
+    // dimensions could now be out of date.
+    if (model.getApproximateScreenLineCount() !== previousScreenLineCount) {
+      this.derivedDimensionsCache = {}
+    }
   }
 
   populateVisibleTiles () {
