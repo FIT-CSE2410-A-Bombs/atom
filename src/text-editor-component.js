@@ -1638,6 +1638,11 @@ class TextEditorComponent {
   // keypress, meaning we're *holding* the _same_ key we intially pressed.
   // Got that?
   didKeydown (event) {
+    // Stop dragging when user interacts with the keyboard. This prevents
+    // unwanted selections in the case edits are performed while selecting text
+    // at the same time.
+    if (this.stopDragging) this.stopDragging()
+
     if (this.lastKeydownBeforeKeypress != null) {
       if (this.lastKeydownBeforeKeypress.code === event.code) {
         this.accentedCharacterMenuIsOpen = true
@@ -1862,7 +1867,6 @@ class TextEditorComponent {
   handleMouseDragUntilMouseUp ({didDrag, didStopDragging}) {
     let dragging = false
     let lastMousemoveEvent
-    let bufferWillChangeDisposable
 
     const animationFrameLoop = () => {
       window.requestAnimationFrame(() => {
@@ -1882,9 +1886,9 @@ class TextEditorComponent {
     }
 
     function didMouseUp () {
+      this.stopDragging = null
       window.removeEventListener('mousemove', didMouseMove)
       window.removeEventListener('mouseup', didMouseUp, {capture: true})
-      bufferWillChangeDisposable.dispose()
       if (dragging) {
         dragging = false
         didStopDragging()
@@ -1893,10 +1897,7 @@ class TextEditorComponent {
 
     window.addEventListener('mousemove', didMouseMove)
     window.addEventListener('mouseup', didMouseUp, {capture: true})
-    // Simulate a mouse-up event if the buffer is about to change. This prevents
-    // unwanted selections when users perform edits while holding the left mouse
-    // button at the same time.
-    bufferWillChangeDisposable = this.props.model.getBuffer().onWillChange(didMouseUp)
+    this.stopDragging = didMouseUp
   }
 
   autoscrollOnMouseDrag ({clientX, clientY}, verticalOnly = false) {
@@ -4202,7 +4203,7 @@ class OverlayComponent {
       if (contentRect.width !== this.props.measuredDimensions.width || contentRect.height !== this.props.measuredDimensions.height) {
         this.resizeObserver.disconnect()
         this.props.didResize()
-        process.nextTick(() => { this.resizeObserver.observe(this.element) })
+        process.nextTick(() => { this.resizeObserver.observe(this.props.element) })
       }
     })
     this.didAttach()
@@ -4226,7 +4227,7 @@ class OverlayComponent {
   }
 
   didAttach () {
-    this.resizeObserver.observe(this.element)
+    this.resizeObserver.observe(this.props.element)
   }
 
   didDetach () {
