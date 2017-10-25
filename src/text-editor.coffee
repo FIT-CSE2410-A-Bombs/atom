@@ -9,6 +9,8 @@ TokenizedBuffer = require './tokenized-buffer'
 Cursor = require './cursor'
 Model = require './model'
 Selection = require './selection'
+TextEditorUtils = require './text-editor-utils'
+
 TextMateScopeSelector = require('first-mate').ScopeSelector
 GutterContainer = require './gutter-container'
 TextEditorComponent = null
@@ -122,6 +124,8 @@ class TextEditor extends Model
   )
 
   Object.defineProperty(@prototype, 'languageMode', get: -> @tokenizedBuffer)
+
+  Object.assign(@prototype, TextEditorUtils)
 
   @deserialize: (state, atomEnvironment) ->
     # TODO: Return null on version mismatch when 1.8.0 has been out for a while
@@ -3247,12 +3251,13 @@ class TextEditor extends Model
   # corresponding clipboard selection text.
   #
   # * `options` (optional) See {Selection::insertText}.
-  pasteText: (options={}) ->
+  pasteText: (options) ->
+    options = Object.assign({}, options)
     {text: clipboardText, metadata} = @constructor.clipboard.readWithMetadata()
     return false unless @emitWillInsertTextEvent(clipboardText)
 
     metadata ?= {}
-    options.autoIndent = @shouldAutoIndentOnPaste()
+    options.autoIndent ?= @shouldAutoIndentOnPaste()
 
     @mutateSelectedText (selection, index) =>
       if metadata.selections?.length is @getSelections().length
@@ -3310,8 +3315,8 @@ class TextEditor extends Model
   # level.
   foldCurrentRow: ->
     {row} = @getCursorBufferPosition()
-    range = @tokenizedBuffer.getFoldableRangeContainingPoint(Point(row, Infinity))
-    @displayLayer.foldBufferRange(range)
+    if range = @tokenizedBuffer.getFoldableRangeContainingPoint(Point(row, Infinity))
+      @displayLayer.foldBufferRange(range)
 
   # Essential: Unfold the most recent cursor's row by one level.
   unfoldCurrentRow: ->
@@ -3621,9 +3626,6 @@ class TextEditor extends Model
   getNonWordCharacters: (scopes) ->
     @scopedSettingsDelegate?.getNonWordCharacters?(scopes) ? @nonWordCharacters
 
-  getCommentStrings: (scopes) ->
-    @scopedSettingsDelegate?.getCommentStrings?(scopes)
-
   ###
   Section: Event Handlers
   ###
@@ -3885,8 +3887,6 @@ class TextEditor extends Model
     @setIndentationForBufferRow(bufferRow, indentLevel) if indentLevel?
 
   toggleLineCommentForBufferRow: (row) -> @toggleLineCommentsForBufferRows(row, row)
-
-  toggleLineCommentsForBufferRows: (start, end) -> @tokenizedBuffer.toggleLineCommentsForBufferRows(start, end)
 
   rowRangeForParagraphAtBufferRow: (bufferRow) ->
     return unless NON_WHITESPACE_REGEXP.test(@lineTextForBufferRow(bufferRow))
